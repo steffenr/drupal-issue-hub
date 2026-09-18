@@ -1,0 +1,37 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Rust / Tauri build output (src-tauri/.gitignore also covers this — kept here
+# so a stray copy outside src-tauri can never be committed; target/ is ~5 GB)
+target/
+**/gen/schemas
+
+# Local tool state (agent ledgers, hook state, reports)
+.mimosa/
+
+# App data / release artifacts
+*.app
+*.dmg
+bundle/

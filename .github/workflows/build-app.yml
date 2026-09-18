@@ -1,0 +1,140 @@
+name: Build Drupal Issue Hub
+# re-register: a content change so GitHub re-scans .github/workflows on the default branch
+
+# Builds the desktop app for all platforms.
+#  - Push a tag like `v0.2.0` -> builds everything and publishes a GitHub
+#    release with all installers.
+#  - workflow_dispatch -> build-only run (no release), artifacts attached to
+#    the workflow run for testing.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: build (${{ matrix.settings.name }})
+    permissions:
+      contents: write
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - platform: macos-latest
+            args: '--target aarch64-apple-darwin'
+            name: macos-arm64
+          - platform: macos-latest
+            args: '--target x86_64-apple-darwin'
+            name: macos-intel
+          - platform: ubuntu-22.04
+            args: ''
+            name: linux-x64
+          - platform: windows-latest
+            args: ''
+            name: windows-x64
+    runs-on: ${{ matrix.settings.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # full history + tags so the release-notes step can diff against the
+          # previous tag
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.settings.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install Linux dependencies (Tauri v2 / webkit2gtk-4.1)
+        if: matrix.settings.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Typecheck & build frontend
+        run: npm run build
+
+      - name: Run Rust tests
+        run: cargo test --release --lib --manifest-path src-tauri/Cargo.toml
+
+      - name: Sync app version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          # Cargo.toml is the source of truth for the bundle/installer version,
+          # so it must be synced from the tag too (not just tauri.conf.json).
+          node scripts/sync-version.mjs "$VERSION"
+
+      - name: Generate release notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: notes
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+          if [ -n "$PREV" ]; then RANGE="${PREV}..${TAG}"; else RANGE="$TAG"; fi
+          NOTES=$(git log "$RANGE" --no-merges --pretty=format:'- %s (%h)' | grep -vE 'chore\(release\):' || true)
+          {
+            echo 'body<<NOTES_EOF'
+            echo 'Native installers for Drupal Issue Hub. Artifacts are unsigned - on macOS right-click -> Open on first launch; Windows may show a SmartScreen warning.'
+            echo
+            if [ -n "$PREV" ]; then
+              echo "## Changes since ${PREV}"
+              echo
+              echo "${NOTES}"
+              echo
+              echo "**Full diff:** ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${PREV}...${TAG}"
+            else
+              echo "## Changes"
+              echo
+              echo "${NOTES}"
+            fi
+            echo 'NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build & publish release (tags) / build only (dispatch)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: .
+          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('Drupal Issue Hub {0}', github.ref_name) || '' }}
+          releaseBody: ${{ steps.notes.outputs.body }}
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.settings.args }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: drupal-issue-hub-${{ matrix.settings.name }}
+          if-no-files-found: ignore
+          path: |
+            src-tauri/target/*/bundle/macos/*.app
+            src-tauri/target/*/bundle/dmg/*.dmg
+            src-tauri/target/*/bundle/nsis/*.exe
+            src-tauri/target/*/bundle/msi/*.msi
+            src-tauri/target/*/bundle/deb/*.deb
+            src-tauri/target/*/bundle/appimage/*.AppImage
+            src-tauri/target/*/bundle/rpm/*.rpm
