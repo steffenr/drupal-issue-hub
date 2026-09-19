@@ -318,15 +318,6 @@ export function IssueTable({
             <Icon name="refresh" size={13} /> Refresh
           </>)}
         </button>
-        <button
-          className="ghost small"
-          onClick={(e) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            setMenu({ x: r.left, y: r.bottom + 4 });
-          }}
-        >
-          Columns
-        </button>
       </div>
 
       <div className="table">
@@ -334,8 +325,14 @@ export function IssueTable({
           className="thead"
           style={{ gridTemplateColumns: gridTemplate }}
           onContextMenu={(e) => {
+            // The context menu on a header is the column switch, so opening
+            // it from a row right-click shows it at the header's place
+            // instead of wherever the pointer happens to be.
             e.preventDefault();
-            setMenu({ x: e.clientX, y: e.clientY });
+            const t = e.target as HTMLElement;
+            const head = t.closest(".thead")?.querySelector(".head-cell") ?? null;
+            const r = head ? head.getBoundingClientRect() : t.getBoundingClientRect();
+            setMenu({ x: r.right - 156, y: r.bottom + 4 });
           }}
         >
           <button
@@ -440,13 +437,15 @@ export function IssueTable({
           <div className="popover-backdrop" onClick={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }} />
           <div
             className="popover"
+            role="menu"
+            aria-label="Toggle columns"
             style={{
               left: Math.min(menu.x, window.innerWidth - 180),
               top: Math.min(menu.y, window.innerHeight - 220),
             }}
           >
             {COLUMNS.map((c) => (
-              <label key={c.key} className="check">
+              <label key={c.key} className="check" role="menuitemcheckbox" aria-checked={!hidden.has(c.key)}>
                 <input
                   type="checkbox"
                   checked={!hidden.has(c.key)}
