@@ -2,11 +2,21 @@
   --bg: #12151c;
   --bg-raised: #1a1f2a;
   --bg-hover: #222838;
+  /* The outermost surface the content floats on: the window / main column.
+     Dark and light share the token so the body never hardcodes a theme.
+     In light mode it is a faint grey so the white panes read as cards. */
+  --app-bg: #12151c;
   --border: #2b3242;
   --text: #dce2ee;
   --text-dim: #8a93a8;
   --accent: #4f8ff7;
   --accent-strong: #2f6fd8;
+  /* Selection/hover tint derived from the accent: one value to re-tune when
+     the accent moves, and swapped wholesale for the light theme below. */
+  --accent-tint: rgba(79, 143, 247, 0.16);
+  --accent-tint-soft: rgba(79, 143, 247, 0.12);
+  --accent-tint-hover: rgba(79, 143, 247, 0.18);
+  --tile: #f5f7fb;
   --green: #3fb27f;
   --orange: #e0a13e;
   --red: #e05c5c;
@@ -24,6 +34,57 @@
   --radius-pill: 999px;
 }
 
+/* Light colour scheme. The whole app is token-driven, so a light theme is a
+   re-map of the same variables plus the surfaces that were measured against
+   dark (selection tints, status pills, badges). "dark" is the default; the
+   renderer only swaps this on when data-theme="light" is set on <html> (see
+   App.tsx / the theme setting). Contrast targets the same AA floor the dark
+   values were chosen against. */
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --bg-raised: #ffffff;
+  --bg-hover: #eef1f6;
+  /* The window behind the white panes is a faint grey so the cards float.
+     --bg stays pure white: rows, comment cards, textareas and code blocks.
+     --bg-raised is white too - the detail pane, sidebar and modals. */
+  --app-bg: #f2f4f8;
+  --border: #d5dbe4;
+  --text: #1a2030;
+  --text-dim: #5a6474;
+  --accent: #2f6fd8;
+  --accent-strong: #2456ad;
+  --accent-tint: rgba(47, 111, 216, 0.14);
+  --accent-tint-soft: rgba(47, 111, 216, 0.10);
+  --accent-tint-hover: rgba(47, 111, 216, 0.20);
+  /* Brand marks are drawn for light tiles, so the tile stays light in both
+     schemes; only the surrounding surface changes. */
+  --tile: #eef1f6;
+  --green: #1f7a4f;
+  --orange: #a9760f;
+  --red: #c53f3f;
+  --blue: #2f6fd8;
+  --purple: #6a4bc7;
+}
+
+/* Status pills: the light scheme tints the same hues but darkens the text so
+   it clears AA on the white / selected-row backdrop. */
+[data-theme="light"] .pill.st-active { background: rgba(169, 118, 15, 0.16); color: #8a5f08; }
+[data-theme="light"] .pill.st-needs-review { background: rgba(47, 111, 216, 0.14); color: #2456ad; }
+[data-theme="light"] .pill.st-rtbc { background: rgba(106, 75, 199, 0.16); color: #563fa8; }
+[data-theme="light"] .pill.st-needs-work { background: rgba(197, 63, 63, 0.14); color: #a52f2f; }
+[data-theme="light"] .pill.st-fixed { background: rgba(31, 122, 79, 0.16); color: #1a6a44; }
+[data-theme="light"] .pill.st-closed { background: rgba(90, 100, 116, 0.16); color: #4a5568; }
+[data-theme="light"] .pill.st-postponed { background: rgba(90, 100, 116, 0.20); color: #3d4759; }
+/* NEW/UPD badges keep their bright fills; darken the label text for contrast. */
+[data-theme="light"] .badge.new { background: #f2b544; color: #4a3406; }
+[data-theme="light"] .badge.changed { background: #4f8ff7; color: #0a1c33; }
+[data-theme="light"] .badge.fav { background: #f2b544; color: #4a3406; }
+/* Selected rows: keep the accent bar, but soften the tint so it reads on white. */
+[data-theme="light"] .side-item.selected,
+[data-theme="light"] .label-chip.on,
+[data-theme="light"] .mode-switch button.on { background: var(--accent-tint); }
+
 * {
   box-sizing: border-box;
 }
@@ -31,7 +92,7 @@
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: var(--bg);
+  background: var(--app-bg);
   color: var(--text);
   font-size: var(--text-base);
   overflow: hidden;
@@ -130,7 +191,7 @@ body {
 .side-item.selected {
   /* Same selection language as .trow.selected: a tint plus an accent bar,
      instead of a solid accent fill that measured 3.68:1 under white-ish text. */
-  background: rgba(79, 143, 247, 0.16);
+  background: var(--accent-tint);
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
@@ -152,7 +213,7 @@ body {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
-  background: #f5f7fb;
+  background: var(--tile);
   border-radius: var(--radius-sm);
 }
 
@@ -513,7 +574,7 @@ body {
 }
 
 .mode-switch button.on {
-  background: rgba(79, 143, 247, 0.16);
+  background: var(--accent-tint);
   color: var(--text);
 }
 
@@ -724,7 +785,7 @@ button.small {
    The bar is full-height, not a 2px sliver: it is a "you are here" marker
    for the whole row. */
 .trow.selected {
-  background: rgba(79, 143, 247, 0.12);
+  background: var(--accent-tint-soft);
   position: relative;
   /* The tint must paint edge-to-edge under the badges and the two-line
      title cell - the padding box, not just the content box. */
@@ -742,7 +803,7 @@ button.small {
 }
 
 .trow.selected:hover {
-  background: rgba(79, 143, 247, 0.18);
+  background: var(--accent-tint-hover);
 }
 
 .trow .title {
@@ -889,7 +950,7 @@ button.small {
 .label-chip.on {
   border-color: var(--accent);
   color: var(--text);
-  background: rgba(79, 143, 247, 0.16);
+  background: var(--accent-tint);
 }
 
 .label-pill-dot,

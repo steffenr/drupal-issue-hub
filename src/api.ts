@@ -82,6 +82,8 @@ export interface Settings {
   hide_system_comments: boolean;
   /** Table filter a freshly opened project starts in: "attention" or "all". */
   default_mode: "attention" | "all";
+  /** Colour scheme: "dark", "light" or "system" (follows the OS). */
+  theme: "dark" | "light" | "system";
   gitlab_user: string | null;
 }
 
@@ -137,12 +139,14 @@ export const api = {
     pollIntervalMinutes: number,
     hideSystemComments: boolean,
     defaultMode?: "attention" | "all" | null,
+    theme?: "dark" | "light" | "system" | null,
   ) =>
     invoke<void>("set_settings", {
       pollEnabled,
       pollIntervalMinutes,
       hideSystemComments,
       defaultMode,
+      theme,
     }),
   saveGitlabToken: (token: string) =>
     invoke<string>("save_gitlab_token", { token }),

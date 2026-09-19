@@ -128,6 +128,10 @@ pub struct Settings {
     pub hide_system_comments: bool,
     /// Table filter a freshly opened project starts in: "attention" or "all".
     pub default_mode: String,
+    /// Colour scheme: "dark", "light" or "system" (follows the OS). Plain
+    /// key/value row, so it needs no migration; "system" is the default when
+    /// the row is absent.
+    pub theme: String,
     pub gitlab_user: Option<String>,
 }
 

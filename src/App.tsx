@@ -87,6 +87,25 @@ function App() {
     void loadSettings();
   }, [loadProjects, loadSettings]);
 
+  // Resolve the colour scheme to an actual dark/light value and stamp it on
+  // <html>. The CSS is all token-driven, so one data-theme attribute flips the
+  // whole app. "system" follows the OS appearance and re-applies live when it
+  // changes. "dark" is the default until settings load.
+  const theme = settings?.theme ?? "dark";
+  useEffect(() => {
+    const root = document.documentElement;
+    const mq = window.matchMedia("(prefers-color-scheme: light)");
+    const apply = () => {
+      const resolved = theme === "system" ? (mq.matches ? "light" : "dark") : theme;
+      root.setAttribute("data-theme", resolved);
+    };
+    apply();
+    if (theme === "system") {
+      mq.addEventListener("change", apply);
+      return () => mq.removeEventListener("change", apply);
+    }
+  }, [theme]);
+
   useEffect(() => {
     void loadIssues();
   }, [loadIssues]);

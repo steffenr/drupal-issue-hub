@@ -626,11 +626,17 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
     let default_mode = se(db::get_setting(&conn, "default_mode"))?
         .filter(|v| v == "attention" || v == "all")
         .unwrap_or_else(|| "attention".to_string());
+    // Colour scheme: "dark", "light" or "system". Plain key/value row, no
+    // migration; "system" (follow the OS) is the default when the row is absent.
+    let theme = se(db::get_setting(&conn, "theme"))?
+        .filter(|v| v == "dark" || v == "light" || v == "system")
+        .unwrap_or_else(|| "system".to_string());
     Ok(Settings {
         poll_enabled,
         poll_interval_minutes,
         hide_system_comments,
         default_mode,
+        theme,
         gitlab_user,
     })
 }
@@ -642,6 +648,7 @@ pub fn set_settings(
     poll_interval_minutes: u64,
     hide_system_comments: bool,
     default_mode: Option<String>,
+    theme: Option<String>,
 ) -> Result<(), String> {
     let conn = state.db.lock().unwrap();
     se(db::set_setting(
@@ -664,6 +671,11 @@ pub fn set_settings(
     // settings, and only "attention"/"all" are ever written.
     if let Some(mode) = default_mode.filter(|m| m == "attention" || m == "all") {
         se(db::set_setting(&conn, "default_mode", &mode))?;
+    }
+    // Same opt-out contract: only a valid "dark"/"light"/"system" is ever
+    // written, and None (or an invalid value) leaves the stored theme alone.
+    if let Some(t) = theme.filter(|t| t == "dark" || t == "light" || t == "system") {
+        se(db::set_setting(&conn, "theme", &t))?;
     }
     Ok(())
 }

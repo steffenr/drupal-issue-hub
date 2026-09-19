@@ -16,6 +16,9 @@ export function SettingsModal({
   const [defaultMode, setDefaultMode] = useState<"attention" | "all">(
     settings.default_mode ?? "attention",
   );
+  const [theme, setTheme] = useState<"dark" | "light" | "system">(
+    settings.theme ?? "system",
+  );
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,13 +57,14 @@ export function SettingsModal({
     savedTimer.current = setTimeout(() => setSaved(false), 1500);
   };
 
-  // set_settings stores the whole triple, so every write sends all three.
+  // set_settings stores the whole setting set, so every write sends all of it.
   const commit = async (
     next: {
       pollEnabled: boolean;
       interval: number;
       hideSystem: boolean;
       defaultMode: "attention" | "all";
+      theme: "dark" | "light" | "system";
     },
     writeDefaultMode = true,
   ) => {
@@ -72,6 +76,7 @@ export function SettingsModal({
         next.interval,
         next.hideSystem,
         writeDefaultMode ? next.defaultMode : null,
+        writeDefaultMode ? next.theme : null,
       );
       flashSaved();
       onSaved();
@@ -85,7 +90,7 @@ export function SettingsModal({
   const togglePoll = (next: boolean) => {
     setPollEnabled(next);
     void commit(
-      { pollEnabled: next, interval, hideSystem, defaultMode },
+      { pollEnabled: next, interval, hideSystem, defaultMode, theme },
       false,
     );
   };
@@ -93,14 +98,19 @@ export function SettingsModal({
   const toggleHideSystem = (next: boolean) => {
     setHideSystem(next);
     void commit(
-      { pollEnabled, interval, hideSystem: next, defaultMode },
+      { pollEnabled, interval, hideSystem: next, defaultMode, theme },
       false,
     );
   };
 
   const chooseDefaultMode = (next: "attention" | "all") => {
     setDefaultMode(next);
-    void commit({ pollEnabled, interval, hideSystem, defaultMode: next });
+    void commit({ pollEnabled, interval, hideSystem, defaultMode: next, theme });
+  };
+
+  const chooseTheme = (next: "dark" | "light" | "system") => {
+    setTheme(next);
+    void commit({ pollEnabled, interval, hideSystem, defaultMode, theme: next });
   };
 
   // The number field is the one control worth debouncing: "1" then "15" is one
@@ -112,7 +122,7 @@ export function SettingsModal({
     intervalTimer.current = setTimeout(
       () =>
         void commit(
-          { pollEnabled, interval: next, hideSystem, defaultMode },
+          { pollEnabled, interval: next, hideSystem, defaultMode, theme },
           false,
         ),
       600,
@@ -124,7 +134,7 @@ export function SettingsModal({
     if (intervalTimer.current) {
       clearTimeout(intervalTimer.current);
       intervalTimer.current = null;
-      void commit({ pollEnabled, interval, hideSystem, defaultMode }, false);
+      void commit({ pollEnabled, interval, hideSystem, defaultMode, theme }, false);
     }
     onClose();
   };
@@ -208,6 +218,25 @@ export function SettingsModal({
           </label>
           <span className="hint">
             Applies when you open a project; you can always switch inside the list.
+          </span>
+        </div>
+
+        <h3>Appearance</h3>
+        <div className="row">
+          <label>
+            Colour scheme
+            <select
+              className="num"
+              value={theme}
+              onChange={(e) => chooseTheme(e.target.value as "dark" | "light" | "system")}
+            >
+              <option value="system">Follow system</option>
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </label>
+          <span className="hint">
+            System follows your OS appearance; dark and light are fixed.
           </span>
         </div>
 

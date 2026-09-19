@@ -5,6 +5,17 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Drupal Issue Hub</title>
+    <script>
+      // Pre-paint the colour scheme so the first frame never flashes the wrong
+      // palette. This mirrors the app's default ("system" until a setting is
+      // stored), and App.tsx re-applies the stored value as soon as settings
+      // load. Kept inline and synchronous on purpose: it must run before the
+      // CSS is painted.
+      document.documentElement.setAttribute(
+        "data-theme",
+        window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark",
+      );
+    </script>
   </head>
 
   <body>
