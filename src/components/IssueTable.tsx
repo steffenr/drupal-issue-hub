@@ -48,6 +48,13 @@ export function IssueTable({
   hasMore,
   loadingMore,
   onLoadMore,
+  scopeIsGitlabProject,
+  scopeName,
+  onCreateIssue,
+  issueError,
+  clearIssueError,
+  onOpenIssueByIid,
+  onCreateError,
 }: {
   issues: Issue[];
   openIssueId: number | null;
@@ -73,10 +80,26 @@ export function IssueTable({
   hasMore: boolean | null;
   loadingMore: boolean;
   onLoadMore: () => void;
+  /** true only when the scope is exactly one GitLab project: drupal.org
+   * queues have no write API and "all projects" has no single target. */
+  scopeIsGitlabProject: boolean;
+  scopeName: string;
+  /** Create a new issue on the scoped project, resolved to the new iid. */
+  onCreateIssue: (title: string, description: string) => Promise<string>;
+  issueError: string | null;
+  clearIssueError: () => void;
+  /** Open the just-created work item by its iid after the list reloaded. */
+  onOpenIssueByIid: (iid: string) => void;
+  /** Report a create failure back to App so it can show the error banner. */
+  onCreateError: (message: string) => void;
 }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [category, setCategory] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newBody, setNewBody] = useState("");
   const [hidden, setHidden] = useState<Set<ColumnKey>>(loadHidden);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   // Click a header to sort the loaded rows, again to reverse, a third time to
@@ -161,7 +184,35 @@ export function IssueTable({
     });
   };
 
+  // New-issue form: create, then open the new work item by iid. The list
+  // reload happens in App after the create; the iid is what the backend
+  // returns, and the row lands in the cache before the open attempt.
+  const submitNewIssue = async () => {
+    if (!newTitle.trim() || submitting) return;
+    setSubmitting(true);
+    clearIssueError();
+    try {
+      const iid = await onCreateIssue(newTitle.trim(), newBody);
+      setNewTitle("");
+      setNewBody("");
+      setSubmitting(false);
+      onOpenIssueByIid(iid);
+    } catch (e) {
+      setSubmitting(false);
+      onCreateError(String(e));
+    }
+  };
+
   // A new scope starts with a clean filter state.
+  // Closing a scope also closes the new-issue form so a half-typed title
+  // does not survive a project switch.
+  useEffect(() => {
+    setFormOpen(false);
+    setNewTitle("");
+    setNewBody("");
+    clearIssueError();
+  }, [scopeKey]);
+
   useEffect(() => {
     setSearch("");
     setStatus("");
@@ -318,7 +369,56 @@ export function IssueTable({
             <Icon name="refresh" size={13} /> Refresh
           </>)}
         </button>
+        {scopeIsGitlabProject && (
+          <button className="ghost" onClick={() => setFormOpen((v) => !v)} title={`Create a new work item on ${scopeName}`}>
+            <Icon name="plus" size={13} /> New issue
+          </button>
+        )}
       </div>
+
+      {scopeIsGitlabProject && formOpen && (
+        <div className="new-issue-form">
+          <input
+            className="new-issue-title"
+            placeholder={`New issue on ${scopeName}…`}
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            disabled={submitting}
+            autoFocus
+            onKeyDown={(e) => {
+              // Cmd/Ctrl+Enter submits from the title field, the way the
+              // detail pane's comment box already does.
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") void submitNewIssue();
+            }}
+          />
+          <textarea
+            className="new-issue-body"
+            placeholder="Description (markdown)"
+            rows={3}
+            value={newBody}
+            onChange={(e) => setNewBody(e.target.value)}
+            disabled={submitting}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") void submitNewIssue();
+            }}
+          />
+          {issueError && <p className="hint error-inline">{issueError}</p>}
+          <div className="new-issue-actions">
+            <button
+              className="primary"
+              disabled={submitting || !newTitle.trim()}
+              onClick={() => void submitNewIssue()}
+              type="button"
+            >
+              {submitting ? "Creating…" : "Create issue"}
+            </button>
+            <button className="ghost" disabled={submitting} onClick={() => setFormOpen(false)} type="button">
+              Cancel
+            </button>
+            <span className="hint dim" title="Same as the comment box in the issue view.">⌘/Ctrl + Enter to submit</span>
+          </div>
+        </div>
+      )}
 
       <div className="table">
         <div

@@ -513,11 +513,17 @@ body {
 }
 
 .error.banner {
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 8px 18px 0;
-  padding: 8px 12px;
   background: rgba(224, 92, 92, 0.1);
   border: 1px solid rgba(224, 92, 92, 0.35);
   border-radius: var(--radius);
+}
+.error.banner button {
+  margin-left: auto;
 }
 
 .error.inline {
@@ -1605,6 +1611,33 @@ button.small {
   color: var(--text-dim);
   font-size: var(--text-sm);
   line-height: 1.5;
+}
+
+/* "New issue" form in the toolbar area of the issue list. */
+.new-issue-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 10px;
+  padding: 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.new-issue-form .new-issue-title {
+  flex: 0 0 auto;
+  font-weight: 500;
+}
+.new-issue-form .new-issue-body {
+  width: 100%;
+}
+.new-issue-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.new-issue-actions .hint {
+  margin-left: auto;
 }
 
 .modal code {

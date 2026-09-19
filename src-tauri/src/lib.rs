@@ -105,6 +105,7 @@ pub fn run() {
             set_issue_labels,
             get_project_labels,
             update_issue,
+            create_issue,
             set_issue_state
         ])
         .run(tauri::generate_context!())

@@ -31,6 +31,9 @@ function App() {
   const [showAdd, setShowAdd] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<Project | null>(null);
+  // A failed "New issue" write is surfaced as a banner with a Dismiss, the
+  // same shape as a failed refresh - and is cleared on the next attempt.
+  const [createError, setCreateError] = useState<string | null>(null);
   // Which list the table shows: the delta since the last look, or everything.
   // attention is the default wherever there is something new to see.
   const [mode, setMode] = useState<"attention" | "all">("attention");
@@ -499,6 +502,12 @@ function App() {
           )}
           <span className="dim staleness">{staleness}</span>
         </header>
+        {createError && (
+          <p className="error banner" role="alert">
+            {createError}
+            <button className="ghost small" onClick={() => setCreateError(null)}>Dismiss</button>
+          </p>
+        )}
         {selectedProject?.last_error && (
           <p className="error banner">{selectedProject.last_error}</p>
         )}
@@ -523,6 +532,25 @@ function App() {
           hasMore={hasMore}
           loadingMore={loadingMore}
           onLoadMore={() => void loadMore()}
+          scopeIsGitlabProject={!!selectedProject && selectedProject.kind === "gitlab"}
+          scopeName={selectedProject?.name ?? ""}
+          onCreateIssue={async (title, body) => {
+            // The backend already re-reads the project after the write
+            // (refresh_after_write), so the new row is in the cache by the
+            // time this resolves; the reload below just puts it on screen.
+            const iid = await api.createIssue(selectedProject!.id, title, body);
+            await Promise.all([loadProjects(), loadIssues()]);
+            return iid;
+          }}
+          onOpenIssueByIid={(iid) => {
+            const row = issues.find(
+              (i) => i.ext_id === iid && i.project_id === selectedProject?.id,
+            );
+            if (row) void openIssueRow(row);
+          }}
+          issueError={createError}
+          clearIssueError={() => setCreateError(null)}
+          onCreateError={setCreateError}
         />
       </main>
       {openIssue && (

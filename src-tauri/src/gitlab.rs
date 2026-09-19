@@ -590,6 +590,33 @@ pub async fn delete_comment(
     Ok(())
 }
 
+pub async fn create_issue(
+    client: &reqwest::Client,
+    project_id: i64,
+    token: &str,
+    title: &str,
+    description: &str,
+) -> Result<i64, String> {
+    let url = format!("{GITLAB_API}/projects/{project_id}/issues");
+    let resp: Value = crate::net::send_retry(
+        client
+            .post(&url)
+            .headers(auth_headers(Some(token)))
+            .json(&json!({ "title": title, "description": description })),
+    )
+    .await?
+    .json()
+    .await
+    .map_err(|e| format!("git.drupalcode.org returned invalid JSON: {}", crate::drupal::err_chain(&e)))?;
+    if !resp.is_null() {
+        if let Some(msg) = resp["message"].as_str() {
+            return Err(format!("Creating issue failed: {msg}"));
+        }
+    }
+    // The work item's iid, so the caller can open it right after creating it.
+    resp["iid"].as_i64().ok_or_else(|| "Unexpected GitLab response: no iid in new issue".to_string())
+}
+
 pub async fn update_issue(
     client: &reqwest::Client,
     project_id: i64,

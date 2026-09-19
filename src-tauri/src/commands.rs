@@ -925,6 +925,31 @@ fn project_id_for_issue(state: &State<'_, AppState>, issue_id: i64) -> Result<i6
     Ok(se(db::get_issue(&conn, issue_id))?.ok_or("Issue not found")?.project_id)
 }
 
+/// Same as the issue variant, but straight from a project row: creating an
+/// issue does not have a row to look back from.
+async fn gitlab_context_for_project(
+    state: &State<'_, AppState>,
+    project_id: i64,
+) -> Result<(i64, String), String> {
+    let project_key = {
+        let conn = state.db.lock().unwrap();
+        let project = se(db::get_project(&conn, project_id))?.ok_or("Project not found")?;
+        if project.kind != "gitlab" {
+            return Err(
+                "This project lives in the drupal.org queue, which does not offer a write API."
+                    .to_string(),
+            );
+        }
+        project.key
+    };
+    let token = get_pat()?.ok_or_else(|| {
+        "No GitLab token configured. Add a personal access token in Settings to create issues."
+            .to_string()
+    })?;
+    let (gid, _) = gitlab::resolve_project(&state.http, &project_key, Some(&token)).await?;
+    Ok((gid, token))
+}
+
 async fn refresh_after_write(state: &State<'_, AppState>, project_id: i64) {
     if let Ok(Some(row)) = {
         let conn = state.db.lock().unwrap();
@@ -1009,6 +1034,27 @@ pub async fn update_issue(
     .await?;
     refresh_after_write(&state, project_id_for_issue(&state, issue_id)?).await;
     Ok(())
+}
+
+/// Create a new issue on a git.drupalcode.org project. Returns the new work
+/// item's iid so the UI can open it. The description is written verbatim -
+/// GitLab renders it as markdown, which is what the existing edit form
+/// handles too. The local cache refreshes afterwards, so the new issue shows
+/// up in the list without waiting for the poll.
+#[tauri::command]
+pub async fn create_issue(
+    state: State<'_, AppState>,
+    project_id: i64,
+    title: String,
+    description: String,
+) -> Result<String, String> {
+    if title.trim().is_empty() {
+        return Err("Title must not be empty".into());
+    }
+    let (gid, token) = gitlab_context_for_project(&state, project_id).await?;
+    let iid = gitlab::create_issue(&state.http, gid, &token, &title, &description).await?;
+    refresh_after_write(&state, project_id).await;
+    Ok(iid.to_string())
 }
 
 /// Add and remove labels on a GitLab issue in a single request. The write is
