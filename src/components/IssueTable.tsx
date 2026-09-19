@@ -193,6 +193,9 @@ export function IssueTable({
     clearIssueError();
     try {
       const iid = await onCreateIssue(newTitle.trim(), newBody);
+      // The form is armed again by a fresh "New issue" click; leaving it
+      // open after a successful create reads as "still in progress".
+      setFormOpen(false);
       setNewTitle("");
       setNewBody("");
       setSubmitting(false);
