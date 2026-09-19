@@ -617,6 +617,26 @@ pub async fn create_issue(
     resp["iid"].as_i64().ok_or_else(|| "Unexpected GitLab response: no iid in new issue".to_string())
 }
 
+/// Delete a work item on git.drupalcode.org for everyone. GitLab's DELETE
+/// returns 204 with no body on success; a 404 surfaces as "issue not found"
+/// when a second client (or the browser) beat this app to it.
+pub async fn delete_issue(
+    client: &reqwest::Client,
+    project_id: i64,
+    iid: &str,
+    token: &str,
+) -> Result<(), String> {
+    let url = format!("{GITLAB_API}/projects/{project_id}/issues/{iid}");
+    let resp =
+        crate::net::send_retry(client.delete(&url).headers(auth_headers(Some(token)))).await?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("Deleting issue failed ({status}): {text}"));
+    }
+    Ok(())
+}
+
 pub async fn update_issue(
     client: &reqwest::Client,
     project_id: i64,

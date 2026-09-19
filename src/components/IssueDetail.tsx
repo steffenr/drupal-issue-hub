@@ -95,6 +95,9 @@ export function IssueDetail({
   onToggleFavorite,
   onUpdated,
   onClose,
+  /** Runs the delete for this issue. App closes the pane after the row is
+   * gone from the cache, so the pane never outlives the work item. */
+  onDelete,
 }: {
   issue: Issue;
   hasToken: boolean;
@@ -107,6 +110,9 @@ export function IssueDetail({
   onToggleFavorite: (issue: Issue) => void;
   onUpdated: () => void;
   onClose: () => void;
+  /** Delete the issue on git.drupalcode.org; the pane is closed by the
+   * caller once the list no longer holds the row. */
+  onDelete: () => Promise<void>;
 }) {
   const [width, setWidth] = useState(loadWidth);
   const widthRef = useRef(width);
@@ -129,6 +135,10 @@ export function IssueDetail({
   const [editingNote, setEditingNote] = useState<string | null>(null);
   const [editingBody, setEditingBody] = useState("");
   const [confirmNote, setConfirmNote] = useState<string | null>(null);
+  // Deleting an issue is a separate, heavier confirmation than a comment:
+  // the work item is gone for everyone, and the pane is a GitLab project
+  // only, so the guard is a writable token, not a drupal.org check.
+  const [confirmDelete, setConfirmDelete] = useState(false);
   // The settings default can be overridden per thread from the discussion
   // header; opening another issue returns to the default.
   const [hideSystemOverride, setHideSystemOverride] = useState<boolean | null>(null);
@@ -277,6 +287,22 @@ export function IssueDetail({
     }
   };
 
+  // The delete path differs from run: the pane unmounts on success, so the
+  // busy flag only matters on failure (it guards the confirm row's buttons
+  // until the user retries or cancels).
+  const deleteIssue = async () => {
+    setBusy(true);
+    setError(null);
+    setConfirmDelete(false);
+    try {
+      await onDelete();
+      onClose();
+    } catch (e) {
+      setError(String(e));
+      setBusy(false);
+    }
+  };
+
   // Opening an issue always re-reads its notes from GitLab, so a write to one
   // of them is picked up by reloading the thread — and with it the MR links
   // that are scraped out of comment bodies. While the reload is in flight the
@@ -359,6 +385,16 @@ export function IssueDetail({
             ← Back
           </button>
           <div className="detail-header-actions">
+            {writable && (
+              <button
+                className={`ghost small ${confirmDelete ? "danger" : ""}`}
+                title="Delete this work item on git.drupalcode.org"
+                onClick={() => setConfirmDelete((v) => !v)}
+                disabled={busy}
+              >
+                <Icon name="trash" size={13} /> Delete
+              </button>
+            )}
             <button
               className="ghost small"
               onClick={onToggleFocus}
@@ -386,6 +422,28 @@ export function IssueDetail({
           </div>
         </div>
         <h2>{issue.title}</h2>
+        {confirmDelete && (
+          <div className="row comment-confirm" role="alert">
+            <span className="hint">
+              Delete this work item on git.drupalcode.org? It is gone for
+              everyone, and its comments with it. This cannot be undone.
+            </span>
+            <button
+              className="danger small"
+              disabled={busy}
+              onClick={() => void deleteIssue()}
+            >
+              Delete
+            </button>
+            <button
+              className="ghost small"
+              disabled={busy}
+              onClick={() => setConfirmDelete(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
         <p className="meta dim">
           #{issue.ext_id} · {issue.source === "drupal" ? "drupal.org" : "git.drupalcode.org"}
         </p>

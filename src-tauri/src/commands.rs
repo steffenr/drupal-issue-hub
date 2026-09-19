@@ -93,6 +93,47 @@ async fn fetch_for_project(
     }
 }
 
+/// The full issue iid set of a GitLab project - enough to drop cache rows
+/// for work items deleted on git.drupalcode.org. Cost model: one request
+/// per started poll per GitLab project (issues are paginated at 100 per
+/// page, and the payload is the standard issue list - the instance ignores
+/// fields=ids, so do not add it back).
+async fn gitlab_all_issue_ids(
+    http: &reqwest::Client,
+    project_key: &str,
+) -> Result<Vec<String>, String> {
+    // The issue list is public, so no token here - same as the main fetch.
+    let (gid, _) = gitlab::resolve_project(http, project_key, None).await?;
+    let mut seen: Vec<String> = Vec::new();
+    let mut page = 1;
+    loop {
+        let base = gitlab::GITLAB_API;
+        let url = format!(
+            "{base}/projects/{gid}/issues?per_page=100&page={page}"
+        );
+        let resp = crate::net::send_retry(http.get(&url)).await?;
+        let v: serde_json::Value = resp.json().await.map_err(|e| {
+            format!("git.drupalcode.org returned invalid JSON: {}", drupal::err_chain(&e))
+        })?;
+        let list =
+            v.as_array().ok_or("Unexpected GitLab response: expected an array of issue ids")?;
+        if list.is_empty() {
+            break;
+        }
+        seen.extend(list.iter().filter_map(|n| n["iid"].as_i64().map(|i| i.to_string())));
+        // A short page is the last one; the cap keeps a pathological project
+        // from pinning the poll forever. The cap is high enough that any
+        // project this app realistically tracks fits - the pruner is the
+        // only consumer, and a truncated keep set would wrongly delete rows,
+        // so the cap must stay above the true queue size.
+        if list.len() < 100 || page >= 20 {
+            break;
+        }
+        page += 1;
+    }
+    Ok(seen)
+}
+
 /// If a drupal.org project's issue queue is empty but the same machine name
 /// on git.drupalcode.org has issues, the project's issues were migrated to
 /// GitLab: convert the stored project to a GitLab source and return the
@@ -180,9 +221,31 @@ async fn refresh_one(state: &State<'_, AppState>, project: &db::ProjectRow) -> R
         Ok((issues, _)) => eprintln!("[refresh] {} ({}): {} issues", project.name, project.kind, issues.len()),
         Err(e) => eprintln!("[refresh] {} ({}): FAILED: {e}", project.name, project.kind),
     }
+    // Work items deleted on GitLab between polls are gone from every page, so
+    // the main fetch cannot see them. The full id set is fetched here, while
+    // the DB mutex is still free - the prune itself runs inside the locked
+    // section below. A failed lookup just skips the prune: deleting cached
+    // rows over an error would wipe real issues.
+    let prunable: Option<Vec<String>> = if project.kind == "gitlab" {
+        match gitlab_all_issue_ids(&state.http, &project.key).await {
+            Ok(ids) => Some(ids),
+            Err(e) => {
+                eprintln!("[refresh] {} ({}): could not fetch full issue list for prune: {e}", project.name, project.kind);
+                None
+            }
+        }
+    } else {
+        None
+    };
     let mut conn = state.db.lock().unwrap();
     match result {
         Ok((issues, _has_more)) => {
+            if let Some(ids) = &prunable {
+                let n = se(db::prune_missing_issues(&conn, project.id, ids)).unwrap_or(0);
+                if n > 0 {
+                    eprintln!("[refresh] {} ({}): pruned {n} locally cached work items", project.name, project.kind);
+                }
+            }
             match se(db::upsert_issues(&mut conn, project.id, &issues, true)) {
                 Ok(delta) => {
                     let _ = db::set_pages_fetched(&conn, project.id, 1);
@@ -1137,5 +1200,26 @@ pub async fn set_issue_state(
     let event = if close { "close" } else { "reopen" };
     gitlab::update_issue(&state.http, gid, &iid, &token, None, None, Some(event)).await?;
     refresh_after_write(&state, project_id_for_issue(&state, issue_id)?).await;
+    Ok(())
+}
+
+/// Delete a GitLab work item for everyone. The cached row and its comments
+/// go immediately (a row the upstream no longer knows about must not sit in
+/// the list while the user waits for a refresh); the post-write refresh then
+/// prunes the same set from every other cache - and the prune, not this
+/// call, is what removes it if the delete raced a refresh in flight.
+#[tauri::command]
+pub async fn delete_issue(
+    state: State<'_, AppState>,
+    issue_id: i64,
+) -> Result<(), String> {
+    let (gid, iid, token) = gitlab_context_for_issue(&state, issue_id).await?;
+    let project_id = project_id_for_issue(&state, issue_id)?;
+    gitlab::delete_issue(&state.http, gid, &iid, &token).await?;
+    {
+        let conn = state.db.lock().unwrap();
+        se(db::delete_issue(&conn, project_id, &iid))?;
+    }
+    refresh_after_write(&state, project_id).await;
     Ok(())
 }

@@ -161,6 +161,8 @@ export const api = {
     invoke<void>("update_issue", { issueId, title, description }),
   createIssue: (projectId: number, title: string, description: string) =>
     invoke<string>("create_issue", { projectId, title, description }),
+  deleteIssue: (issueId: number) =>
+    invoke<void>("delete_issue", { issueId }),
   setIssueState: (issueId: number, close: boolean) =>
     invoke<void>("set_issue_state", { issueId, close }),
   setIssueLabels: (issueId: number, add: string[], remove: string[]) =>

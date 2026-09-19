@@ -568,6 +568,15 @@ function App() {
             setOpenIssue(null);
             setFocusDetail(false);
           }}
+          onDelete={async () => {
+            // The backend deletes the cached row and re-reads the project,
+            // so the list is already minus the work item when this resolves.
+            // The pane closes itself on success; on failure it stays open
+            // with the error, where the user can cancel the delete.
+            await api.deleteIssue(openIssue.id);
+            await Promise.all([loadProjects(), loadIssues()]);
+            setOpenIssue(null);
+          }}
         />
       )}
       {showAdd && (

@@ -608,6 +608,25 @@ pub fn reorder_projects(conn: &mut Connection, ids: &[i64]) -> Result<(), rusqli
     Ok(())
 }
 
+pub fn delete_issue(
+    conn: &Connection,
+    project_id: i64,
+    ext_id: &str,
+) -> Result<(), rusqlite::Error> {
+    // Comments first: the subquery needs the issue row still present, and
+    // without the foreign_keys pragma the note rows would leak otherwise.
+    // Same shape as prune_missing_issues, scoped to one issue.
+    conn.execute(
+        "DELETE FROM comments WHERE issue_id IN (SELECT id FROM issues WHERE project_id = ?1 AND ext_id = ?2)",
+        params![project_id, ext_id],
+    )?;
+    conn.execute(
+        "DELETE FROM issues WHERE project_id = ?1 AND ext_id = ?2",
+        params![project_id, ext_id],
+    )?;
+    Ok(())
+}
+
 pub fn delete_project(conn: &Connection, project_id: i64) -> Result<(), rusqlite::Error> {
     conn.execute(
         "DELETE FROM comments WHERE issue_id IN (SELECT id FROM issues WHERE project_id = ?1)",
@@ -734,6 +753,42 @@ pub fn prune_comments(
         )?;
     }
     Ok(())
+}
+
+/// Drop cache rows for work items that no longer exist on GitLab. `keep` is
+/// the project's full issue id set as fetched upstream, so the cached rows
+/// that are not in it are deleted along with their comments. The comment
+/// rows have to go first: there is no foreign-key enforcement, so a pruned
+/// issue row would otherwise leave its comments as orphans.
+///
+/// Returns the number of issue rows removed.
+pub fn prune_missing_issues(
+    conn: &Connection,
+    project_id: i64,
+    keep: &[String],
+) -> Result<i64, rusqlite::Error> {
+    let cached: Vec<String> = {
+        let mut stmt = conn.prepare("SELECT ext_id FROM issues WHERE project_id = ?1")?;
+        let rows = stmt.query_map(params![project_id], |r| r.get(0))?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    let keep_set: std::collections::HashSet<&str> = keep.iter().map(String::as_str).collect();
+    // Comments first: the subquery needs the issue row to still be present,
+    // and without it a pruned issue would leak its cached notes.
+    let mut stmt_comment = conn.prepare("DELETE FROM comments WHERE issue_id IN (SELECT id FROM issues WHERE project_id = ?1 AND ext_id = ?2)")?;
+    let mut stmt_issue = conn.prepare("DELETE FROM issues WHERE project_id = ?1 AND ext_id = ?2")?;
+    let mut removed = 0i64;
+    for ext in &cached {
+        if keep_set.contains(ext.as_str()) {
+            continue;
+        }
+        // The comment delete must run before the issue row goes, because the
+        // subquery needs the issue id to still be present.
+        stmt_comment.execute(params![project_id, ext])?;
+        stmt_issue.execute(params![project_id, ext])?;
+        removed += 1;
+    }
+    Ok(removed)
 }
 
 /// Labels are stored one per line; GitLab label names cannot contain a newline.
@@ -879,6 +934,105 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         init_schema(&conn).unwrap();
         init_schema(&conn).unwrap();
+    }
+
+    #[test]
+    fn prune_missing_issues_removes_rows_not_in_the_keep_set() {
+        let (mut conn, pid) = seeded();
+        upsert_issues(&mut conn, pid, &[issue("1", 10, 2), issue("2", 11, 0)], true).unwrap();
+        // A cached comment on the doomed row must go with it.
+        let iid = row_id(&conn, pid, "1");
+        conn.execute(
+            "INSERT INTO comments (issue_id, ext_id, author, body, created_at) VALUES (?1, 'n1', 'a', 'b', 1)",
+            [iid],
+        )
+        .unwrap();
+        // "2" still exists upstream, "1" does not -> exactly one row goes.
+        assert_eq!(prune_missing_issues(&conn, pid, &["2".into()]).unwrap(), 1);
+        assert!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM issues WHERE project_id = ?1 AND ext_id = '1'",
+                [pid],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap() == 0,
+            "the deleted work item is gone from the cache"
+        );
+        assert!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM comments WHERE issue_id = ?1",
+                [iid],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap() == 0,
+            "the cached comments of a pruned issue are removed with it"
+        );
+        assert!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM issues WHERE project_id = ?1 AND ext_id = '2'",
+                [pid],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap() == 1,
+            "kept issues survive the prune"
+        );
+    }
+
+    #[test]
+    fn prune_missing_issues_with_empty_keep_set_wipes_the_project() {
+        let (mut conn, pid) = seeded();
+        upsert_issues(&mut conn, pid, &[issue("1", 10, 0), issue("2", 11, 0)], true).unwrap();
+        assert_eq!(prune_missing_issues(&conn, pid, &[]).unwrap(), 2);
+        assert_eq!(row_id_result(&conn, pid, "1"), None);
+    }
+
+    #[test]
+    fn delete_issue_removes_the_row_and_its_comments() {
+        let (mut conn, pid) = seeded();
+        upsert_issues(&mut conn, pid, &[issue("1", 10, 2), issue("2", 11, 0)], true).unwrap();
+        let iid = row_id(&conn, pid, "1");
+        conn.execute(
+            "INSERT INTO comments (issue_id, ext_id, author, body, created_at) VALUES (?1, 'n1', 'a', 'b', 1)",
+            [iid],
+        )
+        .unwrap();
+        delete_issue(&conn, pid, "1").unwrap();
+        assert!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM issues WHERE project_id = ?1 AND ext_id = '1'",
+                [pid],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap() == 0,
+            "the deleted row is gone"
+        );
+        assert!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM comments WHERE issue_id = ?1",
+                [iid],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap() == 0,
+            "the comments of a deleted issue are removed with it"
+        );
+        assert!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM issues WHERE project_id = ?1 AND ext_id = '2'",
+                [pid],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap() == 1,
+            "the sibling row survives"
+        );
+    }
+
+    fn row_id_result(conn: &Connection, pid: i64, ext: &str) -> Option<i64> {
+        conn.query_row(
+            "SELECT id FROM issues WHERE project_id = ?1 AND ext_id = ?2",
+            params![pid, ext],
+            |r| r.get(0),
+        )
+        .ok()
     }
 
     #[test]
