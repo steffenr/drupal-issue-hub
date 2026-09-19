@@ -6,6 +6,7 @@ import { Icon } from "./Icon";
 import { LabelEditor } from "./LabelEditor";
 import { renderMarkup } from "../render";
 import { dateStr, timeAgo, statusClass } from "../util";
+import { TipTapEditor } from "./TipTapEditor";
 
 const MIN_WIDTH = 320;
 const MAX_WIDTH = 800;
@@ -127,6 +128,10 @@ export function IssueDetail({
     total: number;
   } | null>(null);
   const [editing, setEditing] = useState(false);
+  // WYSIWYG editing (TipTap) is the default for GitLab bodies, with a plain
+  // markdown textarea escape hatch in case the editor or its round-trip
+  // misbehaves - the stored body stays markdown in both modes.
+  const [bodyMode, setBodyMode] = useState<"rich" | "markdown">("rich");
   const [bodyExpanded, setBodyExpanded] = useState(false);
   const [title, setTitle] = useState(issue.title);
   const [body, setBody] = useState(issue.body);
@@ -366,6 +371,21 @@ export function IssueDetail({
     reloadThread().catch((e) => setError(String(e)));
   }, [issue.source, issue.comment_count, hasToken]);
 
+  // Esc cancels the edit form — the keyboard equivalent of the Cancel
+  // button, available regardless of which element has focus.
+  useEffect(() => {
+    if (!editing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setEditing(false);
+        setTitle(issue.title);
+        setBody(issue.body);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [editing, issue.title, issue.body]);
+
   return (
     <aside
       className={`detail ${focused ? "focused" : ""}`}
@@ -453,6 +473,34 @@ export function IssueDetail({
           </span>
           {issue.category_label && <span className="pill st-other">{issue.category_label}</span>}
           {issue.version && <span className="pill st-other">{issue.version}</span>}
+          {writable && (
+            editing ? (
+              <button
+                className="ghost small"
+                title="Cancel editing — restores the original title and body"
+                onClick={() => {
+                  setEditing(false);
+                  setTitle(issue.title);
+                  setBody(issue.body);
+                }}
+              >
+                <Icon name="pencil" size={12} /> Cancel
+              </button>
+            ) : (
+              <button
+                className="ghost small"
+                title="Edit title, description and status"
+                onClick={() => {
+                  setError(null);
+                  setConfirmNote(null);
+                  setConfirmDelete(false);
+                  setEditing(true);
+                }}
+              >
+                <Icon name="pencil" size={12} /> Edit
+              </button>
+            )
+          )}
         </p>
         <p className="meta dim">
           by {issue.author || "unknown"} · created {dateStr(issue.created_at)} · updated{" "}
@@ -471,13 +519,34 @@ export function IssueDetail({
 
         <div className={`detail-scroll${reloading ? " busy" : ""}`}>
         {editing ? (
-          <div className="edit-form">
-            <input value={title} onChange={(e) => setTitle(e.target.value)} />
-            <textarea
-              rows={14}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-            />
+          <div className="edit-form">            <input value={title} onChange={(e) => setTitle(e.target.value)} />
+            {issue.source === "gitlab" && bodyMode === "rich" ? (
+              <TipTapEditor
+                value={body}
+                onMarkdown={setBody}
+                onCancel={() => {
+                  setEditing(false);
+                  setTitle(issue.title);
+                  setBody(issue.body);
+                }}
+              />
+            ) : (
+              <textarea
+                rows={14}
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+              />
+            )}
+            {issue.source === "gitlab" && (
+              <button
+                className="ghost small"
+                type="button"
+                onClick={() => setBodyMode((m) => (m === "rich" ? "markdown" : "rich"))}
+                title="TipTap can misbehave on unusual markup; the plain editor saves the same markdown."
+              >
+                {bodyMode === "rich" ? "Edit as plain markdown" : "Switch to WYSIWYG"}
+              </button>
+            )}
             <div className="row">
               <button
                 className="primary"
@@ -789,18 +858,13 @@ export function IssueDetail({
                 Post comment
               </button>
               {writable && (
-                <>
-                  <button className="ghost" disabled={busy} onClick={() => setEditing(true)}>
-                    Edit issue
-                  </button>
-                  <button
-                    className="ghost"
-                    disabled={busy}
-                    onClick={() => void run(() => api.setIssueState(issue.id, issue.status_label !== "Closed"))}
-                  >
-                    {issue.status_label === "Closed" ? "Reopen issue" : "Mark closed"}
-                  </button>
-                </>
+                <button
+                  className="ghost"
+                  disabled={busy}
+                  onClick={() => void run(() => api.setIssueState(issue.id, issue.status_label !== "Closed"))}
+                >
+                  {issue.status_label === "Closed" ? "Reopen issue" : "Mark closed"}
+                </button>
               )}
             </div>
           </div>

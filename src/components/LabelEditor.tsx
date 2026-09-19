@@ -246,6 +246,9 @@ export function LabelEditor({
     setNext(issue.labels);
     setText("");
     setError(null);
+    setOpen(false);
+    setSuggest(false);
+    setExpanded(false);
   };
 
   const save = async () => {
