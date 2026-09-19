@@ -622,8 +622,10 @@ button.small {
   /* One row, one height. The title cell holds a one-line title and a meta
      line (author · comments) and still fits in 58px, so the list gets a
      scannable rhythm. A little air between rows - 52px felt pressed against
-     the next row. */
-  height: 58px;
+     the next row. min-height, not height: a wrapped status chip (see the
+     .col-status rules below) may need two lines, and the row must grow for
+     it instead of clipping the label. */
+  min-height: 58px;
 }
 
 /* The title cell holds two lines: the main line (star, badges, #id, title)
@@ -660,6 +662,23 @@ button.small {
 .trow .col-category,
 .trow .col-updated {
   align-self: center;
+}
+
+/* Status labels span a wide range - "RTBC" to "Postponed (maintainer needs
+   more info)". The pill's default nowrap overflowed the track and the long
+   tails got clipped unreadable, so status chips wrap instead: text breaks at
+   word boundaries and the row grows (min-height, not a fixed height) so a
+   two-line chip is never cut off. Category and Updated are single words and
+   keep their plain single-line pill. */
+.trow .col-status {
+  min-width: 0;
+}
+
+.trow .col-status .pill {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: break-word;
+  line-height: 1.25;
 }
 
 .thead {

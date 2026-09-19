@@ -1,6 +1,6 @@
 [package]
 name = "drupal-issue-hub"
-version = "0.1.1"
+version = "0.2.0"
 description = "Track drupal.org and git.drupalcode.org issue queues"
 authors = ["Steffen"]
 edition = "2021"

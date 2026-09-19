@@ -11,7 +11,7 @@ type SortKey = ColumnKey | "title";
  * moved into the title cell for the same reason: a 130px column for one
  * short word was the width the detail pane kept eating (see App.tsx). */
 const COLUMNS: { key: ColumnKey; label: string; width: string }[] = [
-  { key: "status", label: "Status", width: "150px" },
+  { key: "status", label: "Status", width: "170px" },
   { key: "category", label: "Category", width: "90px" },
   { key: "updated", label: "Updated", width: "80px" },
 ];
