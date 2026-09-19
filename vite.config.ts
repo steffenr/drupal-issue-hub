@@ -29,4 +29,40 @@ export default defineConfig(() => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+
+  build: {
+    // The vendor chunk (TipTap/ProseMirror + React + marked + DOMPurify)
+    // legitimately exceeds the default 500 kB threshold in a desktop app;
+    // this is a code-splitting warning, not a correctness problem.
+    chunkSizeWarningLimit: 800,
+    // Split vendor libraries into their own chunk so the app code stays a
+    // small, cache-friendly file. TipTap/ProseMirror loads once and is
+    // separate from the app code that changes with every feature.
+    rollupOptions: {
+      output: {
+        // Rolldown expects a function, not the object form.
+        manualChunks(id) {
+          const vendor = [
+            "tiptap",
+            "prosemirror",
+            "markdown-it",
+            "entities",
+            "linkifyjs",
+            "marked",
+            "dompurify",
+            "react",
+            "react-dom",
+            "scheduler",
+          ];
+          if (id.includes("node_modules")) {
+            for (const pkg of vendor) {
+              if (id.includes(`node_modules/${pkg}`)) {
+                return "vendor";
+              }
+            }
+          }
+        },
+      },
+    },
+  },
 }));
