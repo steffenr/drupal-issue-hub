@@ -127,11 +127,12 @@ pub async fn fetch_issues(
 
 /// Resolve an author UID to a human-readable username by fetching user.json.
 /// drupal.org stores comment author as a user reference `{id: uid}` without the name field.
-async fn resolve_author_name(client: &reqwest::Client, uid: &str) -> Option<String> {
-    if uid.is_empty() || uid == "0" {
+/// The id is the public drupal.org author number shown on every profile page.
+async fn resolve_author_name(client: &reqwest::Client, author_ref: &str) -> Option<String> {
+    if author_ref.is_empty() || author_ref == "0" {
         return None;
     }
-    let url = format!("{DRUPAL_API}/user.json?uid={uid}&limit=1");
+    let url = format!("{DRUPAL_API}/user.json?uid={author_ref}&limit=1");
     let Ok(resp) = crate::net::send_retry(client.get(&url)).await else {
         return None;
     };
@@ -210,8 +211,8 @@ pub async fn fetch_comment(
     let Some(n) = resp["list"].as_array().and_then(|l| l.first()) else {
         return Ok(None);
     };
-    let uid = n["author"]["id"].as_str().unwrap_or("").to_string();
-    let author = resolve_author_name(client, &uid).await.unwrap_or(uid);
+    let author_ref = n["author"]["id"].as_str().unwrap_or("").to_string();
+    let author = resolve_author_name(client, &author_ref).await.unwrap_or(author_ref);
     Ok(Some(FetchedComment {
         ext_id: s(n, "cid"),
         author,

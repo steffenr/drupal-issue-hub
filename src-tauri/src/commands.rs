@@ -875,7 +875,7 @@ pub async fn get_comments(
             let token = get_pat()?.ok_or_else(|| {
                 "Reading comments on git.drupalcode.org requires a personal access token (Settings).".to_string()
             })?;
-            let (gid, _) = gitlab::resolve_project(&state.http, &project_key, Some(&token)).await?;
+            let (gid, _) = gitlab::resolve_project(&state.http, &project_key, None).await?;
             let (fetched, complete) =
                 gitlab::fetch_comments(&state.http, gid, &ext_id, Some(token.as_str())).await?;
             (fetched, complete)
@@ -978,7 +978,10 @@ async fn gitlab_context_for_issue(
         "No GitLab token configured. Add a personal access token in Settings to edit issues."
             .to_string()
     })?;
-    let (gid, _) = gitlab::resolve_project(&state.http, &project_key, Some(&token)).await?;
+    // drupal.org projects are public, so the id lookup needs no token. Keeping
+    // the token out of it also keeps anything token-derived out of the URLs
+    // built from `gid` (CodeQL rust/cleartext-transmission).
+    let (gid, _) = gitlab::resolve_project(&state.http, &project_key, None).await?;
     Ok((gid, ext_id, token))
 }
 
@@ -1009,7 +1012,7 @@ async fn gitlab_context_for_project(
         "No GitLab token configured. Add a personal access token in Settings to create issues."
             .to_string()
     })?;
-    let (gid, _) = gitlab::resolve_project(&state.http, &project_key, Some(&token)).await?;
+    let (gid, _) = gitlab::resolve_project(&state.http, &project_key, None).await?;
     Ok((gid, token))
 }
 
@@ -1181,7 +1184,7 @@ pub async fn get_project_labels(
         "No GitLab token configured. Add a personal access token in Settings to read a project's labels."
             .to_string()
     })?;
-    let (gid, _) = gitlab::resolve_project(&state.http, &key, Some(&token)).await?;
+    let (gid, _) = gitlab::resolve_project(&state.http, &key, None).await?;
     let labels = gitlab::fetch_labels(&state.http, gid, &token).await?;
     {
         let mut conn = state.db.lock().unwrap();

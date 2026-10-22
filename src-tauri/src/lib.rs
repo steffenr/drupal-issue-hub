@@ -68,6 +68,10 @@ pub fn run() {
                 .pool_idle_timeout(std::time::Duration::from_secs(15))
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .timeout(std::time::Duration::from_secs(30))
+                // Every API host is https-only (see the host allowlist in
+                // AGENTS.md); refuse plain-http URLs and redirects outright so
+                // the PRIVATE-TOKEN header can never leave in cleartext.
+                .https_only(true)
                 .build()?;
             app.manage(AppState {
                 db: Mutex::new(conn),

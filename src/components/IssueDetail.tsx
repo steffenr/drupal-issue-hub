@@ -30,8 +30,14 @@ const SECTIONS = [
 /** Beyond this a description is collapsed behind one click. */
 const COLLAPSE_WORDS = 600;
 
+/** Plain text of a markup fragment, for comparing heading labels only (the
+ * result is never inserted into the page). DOMParser does not run scripts or
+ * load resources, and textContent drops every tag and decodes all entities. */
+const textOf = (t: string) =>
+  new DOMParser().parseFromString(t, "text/html").body.textContent ?? "";
+
 const norm = (t: string) =>
-  t.replace(/[<>]/g, "").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim().replace(/:$/, "").toLowerCase();
+  textOf(t).replace(/\s+/g, " ").trim().replace(/:$/, "").toLowerCase();
 
 /**
  * Adds ids to the known section headings and reports what it found, so the pane
