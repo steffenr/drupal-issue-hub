@@ -29,7 +29,13 @@ pub async fn resolve_project(
     if let Some(msg) = resp["message"].as_str() {
         return Err(format!("GitLab error: {msg}"));
     }
-    let id = resp["id"].as_i64().ok_or("Unexpected GitLab response")?;
+    if let Some(err) = resp["error"].as_str() {
+        return Err(format!("GitLab error: {err}"));
+    }
+    let id = match resp["id"].as_i64() {
+        Some(v) => v,
+        None => return Err(format!("Unexpected GitLab response resolving project '{path}': {resp}")),
+    };
     let name = resp["name_with_namespace"]
         .as_str()
         .unwrap_or(path)
@@ -51,9 +57,15 @@ pub async fn fetch_issues(
         .json()
         .await
         .map_err(|e| format!("git.drupalcode.org returned invalid JSON: {}", crate::drupal::err_chain(&e)))?;
+    if let Some(msg) = resp["message"].as_str() {
+        return Err(format!("GitLab error: {msg}"));
+    }
+    if let Some(err) = resp["error"].as_str() {
+        return Err(format!("GitLab error: {err}"));
+    }
     let list = resp
         .as_array()
-        .ok_or_else(|| "Unexpected GitLab response".to_string())?;
+        .ok_or_else(|| format!("Unexpected GitLab response: {resp}"))?;
 
     let issues = list
         .iter()
@@ -143,9 +155,14 @@ pub async fn fetch_comments(
                 "GitLab error: {msg} (reading comments requires a personal access token in Settings)"
             ));
         }
+        if let Some(err) = resp["error"].as_str() {
+            return Err(format!(
+                "GitLab error: {err} (reading comments requires a personal access token in Settings)"
+            ));
+        }
         let list = resp
             .as_array()
-            .ok_or_else(|| "Unexpected GitLab notes response".to_string())?;
+            .ok_or_else(|| format!("Unexpected GitLab notes response: {resp}"))?;
         let count = list.len();
         all.extend(list.iter().map(|n| FetchedComment {
             ext_id: n["id"].as_i64().map(|v| v.to_string()).unwrap_or_default(),
@@ -342,9 +359,14 @@ pub async fn fetch_labels(
                 "GitLab error: {msg} (reading a project's labels requires a personal access token in Settings)"
             ));
         }
+        if let Some(err) = resp["error"].as_str() {
+            return Err(format!(
+                "GitLab error: {err} (reading a project's labels requires a personal access token in Settings)"
+            ));
+        }
         let list = resp
             .as_array()
-            .ok_or_else(|| "Unexpected GitLab labels response".to_string())?;
+            .ok_or_else(|| format!("Unexpected GitLab labels response: {resp}"))?;
         let count = list.len();
         all.extend(list.iter().map(|l| Label {
             name: l["name"].as_str().unwrap_or("").to_string(),
@@ -505,10 +527,13 @@ pub async fn validate_token(client: &reqwest::Client, token: &str) -> Result<Str
     if let Some(msg) = resp["message"].as_str() {
         return Err(format!("Token rejected: {msg}"));
     }
+    if let Some(err) = resp["error"].as_str() {
+        return Err(format!("Token rejected: {err}"));
+    }
     resp["username"]
         .as_str()
         .map(|u| u.to_string())
-        .ok_or_else(|| "Unexpected response validating token".to_string())
+        .ok_or_else(|| format!("Unexpected response validating token: {resp}"))
 }
 
 pub async fn add_comment(
@@ -612,9 +637,11 @@ pub async fn create_issue(
         if let Some(msg) = resp["message"].as_str() {
             return Err(format!("Creating issue failed: {msg}"));
         }
+        if let Some(err) = resp["error"].as_str() {
+            return Err(format!("Creating issue failed: {err}"));
+        }
     }
-    // The work item's iid, so the caller can open it right after creating it.
-    resp["iid"].as_i64().ok_or_else(|| "Unexpected GitLab response: no iid in new issue".to_string())
+    resp["iid"].as_i64().ok_or_else(|| format!("Unexpected GitLab response: no iid in new issue: {resp}"))
 }
 
 /// Delete a work item on git.drupalcode.org for everyone. GitLab's DELETE

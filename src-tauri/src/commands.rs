@@ -116,7 +116,7 @@ async fn gitlab_all_issue_ids(
             format!("git.drupalcode.org returned invalid JSON: {}", drupal::err_chain(&e))
         })?;
         let list =
-            v.as_array().ok_or("Unexpected GitLab response: expected an array of issue ids")?;
+            v.as_array().ok_or_else(|| format!("Unexpected GitLab response: expected an array of issue ids: {v}"))?;
         if list.is_empty() {
             break;
         }
