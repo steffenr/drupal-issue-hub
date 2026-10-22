@@ -31,7 +31,7 @@ const SECTIONS = [
 const COLLAPSE_WORDS = 600;
 
 const norm = (t: string) =>
-  t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim().replace(/:$/, "").toLowerCase();
+  t.replace(/[<>]/g, "").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim().replace(/:$/, "").toLowerCase();
 
 /**
  * Adds ids to the known section headings and reports what it found, so the pane
