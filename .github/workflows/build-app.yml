@@ -37,14 +37,14 @@ jobs:
             name: windows-x64
     runs-on: ${{ matrix.settings.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # full history + tags so the release-notes step can diff against the
           # previous tag
           fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -113,7 +113,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build & publish release (tags) / build only (dispatch)
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -126,7 +126,7 @@ jobs:
           args: ${{ matrix.settings.args }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: drupal-issue-hub-${{ matrix.settings.name }}
           if-no-files-found: ignore

@@ -37,7 +37,7 @@ jobs:
     name: Bump version and tag
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # full history + tags so we can detect an existing tag and let the
           # build workflow compute release notes from the previous tag
@@ -45,7 +45,7 @@ jobs:
           token: ${{ secrets.RELEASE_PAT }}
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 
