@@ -789,26 +789,40 @@ button.small {
 /* The row whose issue is open in the detail pane. An accent bar plus a faint
    tint keeps it distinguishable from a hovered row, which is plain --bg-hover.
    The bar is full-height, not a 2px sliver: it is a "you are here" marker
-   for the whole row. */
+   for the whole row.
+
+   The .table container has 18px horizontal padding, so a plain .trow fills
+   only its content area - leaving a gap on each side where the selected tint
+   does not paint. A full-width ::before extends the tint to the table's
+   padding-box edges, and the accent bar rides on top of it. */
 .trow.selected {
-  background: var(--accent-tint-soft);
   position: relative;
-  /* The tint must paint edge-to-edge under the badges and the two-line
-     title cell - the padding box, not just the content box. */
-  background-clip: padding-box;
 }
 
 .trow.selected::before {
   content: "";
   position: absolute;
-  left: 0;
+  left: -18px;
+  right: -18px;
+  top: 0;
+  bottom: 0;
+  background: var(--accent-tint-soft);
+  /* The tint must paint edge-to-edge under the badges and the two-line
+     title cell - the padding box, not just the content box. */
+  background-clip: padding-box;
+}
+
+.trow.selected::after {
+  content: "";
+  position: absolute;
+  left: -18px;
   top: 0;
   bottom: 0;
   width: 3px;
   background: var(--accent);
 }
 
-.trow.selected:hover {
+.trow.selected:hover::before {
   background: var(--accent-tint-hover);
 }
 
