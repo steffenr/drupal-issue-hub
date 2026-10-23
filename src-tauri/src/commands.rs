@@ -958,10 +958,22 @@ pub async fn get_issue_assets(
     }
 }
 
+/// The PAT for a GitLab write, or a message naming what it is needed for.
+///
+/// Kept apart from the `gitlab_context_*` lookups on purpose: returning the
+/// token in the same tuple as the project id made CodeQL treat every URL
+/// built from that id as carrying the token (rust/cleartext-transmission).
+fn gitlab_write_token(purpose: &str) -> Result<String, String> {
+    get_pat()?.ok_or_else(|| {
+        format!("No GitLab token configured. Add a personal access token in Settings to {purpose}.")
+    })
+}
+
+/// GitLab project id and issue iid for an issue row.
 async fn gitlab_context_for_issue(
     state: &State<'_, AppState>,
     issue_id: i64,
-) -> Result<(i64, String, String), String> {
+) -> Result<(i64, String), String> {
     let (project_key, ext_id) = {
         let conn = state.db.lock().unwrap();
         let issue = se(db::get_issue(&conn, issue_id))?.ok_or("Issue not found")?;
@@ -974,15 +986,9 @@ async fn gitlab_context_for_issue(
         let project = se(db::get_project(&conn, issue.project_id))?.ok_or("Project not found")?;
         (project.key, issue.ext_id)
     };
-    let token = get_pat()?.ok_or_else(|| {
-        "No GitLab token configured. Add a personal access token in Settings to edit issues."
-            .to_string()
-    })?;
-    // drupal.org projects are public, so the id lookup needs no token. Keeping
-    // the token out of it also keeps anything token-derived out of the URLs
-    // built from `gid` (CodeQL rust/cleartext-transmission).
+    // drupal.org projects are public, so the id lookup needs no token.
     let (gid, _) = gitlab::resolve_project(&state.http, &project_key, None).await?;
-    Ok((gid, ext_id, token))
+    Ok((gid, ext_id))
 }
 
 /// The project an issue row belongs to, for the refresh that follows a write.
@@ -996,7 +1002,7 @@ fn project_id_for_issue(state: &State<'_, AppState>, issue_id: i64) -> Result<i6
 async fn gitlab_context_for_project(
     state: &State<'_, AppState>,
     project_id: i64,
-) -> Result<(i64, String), String> {
+) -> Result<i64, String> {
     let project_key = {
         let conn = state.db.lock().unwrap();
         let project = se(db::get_project(&conn, project_id))?.ok_or("Project not found")?;
@@ -1008,12 +1014,8 @@ async fn gitlab_context_for_project(
         }
         project.key
     };
-    let token = get_pat()?.ok_or_else(|| {
-        "No GitLab token configured. Add a personal access token in Settings to create issues."
-            .to_string()
-    })?;
     let (gid, _) = gitlab::resolve_project(&state.http, &project_key, None).await?;
-    Ok((gid, token))
+    Ok(gid)
 }
 
 async fn refresh_after_write(state: &State<'_, AppState>, project_id: i64) {
@@ -1034,7 +1036,8 @@ pub async fn add_issue_comment(
     if body.trim().is_empty() {
         return Err("Comment is empty".into());
     }
-    let (gid, iid, token) = gitlab_context_for_issue(&state, issue_id).await?;
+    let token = gitlab_write_token("edit issues")?;
+    let (gid, iid) = gitlab_context_for_issue(&state, issue_id).await?;
     gitlab::add_comment(&state.http, gid, &iid, &token, &body).await?;
     refresh_after_write(&state, project_id_for_issue(&state, issue_id)?).await;
     Ok(())
@@ -1052,7 +1055,8 @@ pub async fn edit_issue_comment(
     if body.trim().is_empty() {
         return Err("Comment is empty".into());
     }
-    let (gid, iid, token) = gitlab_context_for_issue(&state, issue_id).await?;
+    let token = gitlab_write_token("edit issues")?;
+    let (gid, iid) = gitlab_context_for_issue(&state, issue_id).await?;
     gitlab::edit_comment(&state.http, gid, &iid, &ext_id, &token, &body).await?;
     refresh_after_write(&state, project_id_for_issue(&state, issue_id)?).await;
     Ok(())
@@ -1067,7 +1071,8 @@ pub async fn delete_issue_comment(
     issue_id: i64,
     ext_id: String,
 ) -> Result<(), String> {
-    let (gid, iid, token) = gitlab_context_for_issue(&state, issue_id).await?;
+    let token = gitlab_write_token("edit issues")?;
+    let (gid, iid) = gitlab_context_for_issue(&state, issue_id).await?;
     gitlab::delete_comment(&state.http, gid, &iid, &ext_id, &token).await?;
     {
         let conn = state.db.lock().unwrap();
@@ -1087,7 +1092,8 @@ pub async fn update_issue(
     if title.trim().is_empty() {
         return Err("Title must not be empty".into());
     }
-    let (gid, iid, token) = gitlab_context_for_issue(&state, issue_id).await?;
+    let token = gitlab_write_token("edit issues")?;
+    let (gid, iid) = gitlab_context_for_issue(&state, issue_id).await?;
     gitlab::update_issue(
         &state.http,
         gid,
@@ -1117,7 +1123,8 @@ pub async fn create_issue(
     if title.trim().is_empty() {
         return Err("Title must not be empty".into());
     }
-    let (gid, token) = gitlab_context_for_project(&state, project_id).await?;
+    let token = gitlab_write_token("create issues")?;
+    let gid = gitlab_context_for_project(&state, project_id).await?;
     let iid = gitlab::create_issue(&state.http, gid, &token, &title, &description).await?;
     refresh_after_write(&state, project_id).await;
     Ok(iid.to_string())
@@ -1140,7 +1147,8 @@ pub async fn set_issue_labels(
     }
     gitlab::check_label_names(&add, "adding")?;
     gitlab::check_label_names(&remove, "removing")?;
-    let (gid, iid, token) = gitlab_context_for_issue(&state, issue_id).await?;
+    let token = gitlab_write_token("edit issues")?;
+    let (gid, iid) = gitlab_context_for_issue(&state, issue_id).await?;
     gitlab::set_labels(&state.http, gid, &iid, &token, &add, &remove).await?;
     {
         let conn = state.db.lock().unwrap();
@@ -1199,7 +1207,8 @@ pub async fn set_issue_state(
     issue_id: i64,
     close: bool,
 ) -> Result<(), String> {
-    let (gid, iid, token) = gitlab_context_for_issue(&state, issue_id).await?;
+    let token = gitlab_write_token("edit issues")?;
+    let (gid, iid) = gitlab_context_for_issue(&state, issue_id).await?;
     let event = if close { "close" } else { "reopen" };
     gitlab::update_issue(&state.http, gid, &iid, &token, None, None, Some(event)).await?;
     refresh_after_write(&state, project_id_for_issue(&state, issue_id)?).await;
@@ -1216,7 +1225,8 @@ pub async fn delete_issue(
     state: State<'_, AppState>,
     issue_id: i64,
 ) -> Result<(), String> {
-    let (gid, iid, token) = gitlab_context_for_issue(&state, issue_id).await?;
+    let token = gitlab_write_token("edit issues")?;
+    let (gid, iid) = gitlab_context_for_issue(&state, issue_id).await?;
     let project_id = project_id_for_issue(&state, issue_id)?;
     gitlab::delete_issue(&state.http, gid, &iid, &token).await?;
     {
