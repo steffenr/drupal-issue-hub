@@ -12,9 +12,17 @@ name: Release
 # publishes the GitHub release (with auto-generated notes).
 #
 # Requires a repository secret RELEASE_PAT: a Personal Access Token (classic or
-# fine-grained with Contents: Read & write) whose owner may push to the release
-# branch. A PAT is required because pushes made with the default GITHUB_TOKEN do
-# not trigger other workflows, so the tag would never start the build.
+# fine-grained with Contents: Read & write and Metadata: Read) whose owner may push
+# to the release branch. A PAT is required because pushes made with the default
+# GITHUB_TOKEN do not trigger other workflows, so the tag would never start the build.
+#
+# NOTE on tag-push reliability: GitHub's git server runs a workflow-file validation
+# check on every git push from Actions. With actions/checkout@v5+, this check
+# intermittently times out (see actions/checkout#2287), producing a generic
+# "! [remote rejected] vX.Y.Z -> vX.Y.Z (failed)" rejection even when the PAT has
+# all required scopes. The tag push below is retried with a short delay to handle
+# this transient server-side timeout. The branch push almost never hits this issue
+# because it is the first push in the step.
 
 on:
   workflow_dispatch:
@@ -97,5 +105,20 @@ jobs:
           git tag -a "$TAG" -m "Release ${NEXT}"
           REMOTE="https://x-access-token:${GIT_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push "$REMOTE" "HEAD:refs/heads/${BRANCH}"
-          git push "$REMOTE" "$TAG"
+          # Retry the tag push: GitHub's server-side workflow validation check
+          # intermittently times out with checkout@v5+ (actions/checkout#2287),
+          # producing a generic "(failed)" rejection. The PAT has all required
+          # scopes — this is a transient server-side timeout, not a permission issue.
+          for attempt in 1 2 3; do
+            if git push "$REMOTE" "$TAG" 2>&1; then
+              echo "Pushed tag ${TAG} on attempt ${attempt}"
+              break
+            elif [ "$attempt" -eq 3 ]; then
+              echo "::error::Failed to push tag ${TAG} after 3 attempts"
+              exit 1
+            else
+              echo "Tag push attempt ${attempt} failed, retrying in 10s..."
+              sleep 10
+            fi
+          done
           echo "Pushed ${BRANCH} and tag ${TAG}; build-app.yml will publish the release."
